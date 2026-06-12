@@ -221,7 +221,7 @@ def phase1_subdomains(domain, results_dir):
         try:
             url = f"https://crt.sh/?q=%.{domain}&output=json"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 data = json.loads(resp.read())
             count = 0
             for entry in data:
@@ -235,7 +235,7 @@ def phase1_subdomains(domain, results_dir):
         except:
             if attempt < 2:
                 warn(f"crt.sh timeout, retrying ({attempt+2}/3)")
-                time.sleep(3)
+                time.sleep(5)
             else:
                 fail("crt.sh: failed after 3 attempts")
 
@@ -471,23 +471,30 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("chaos: failed")
 
-    # 17. Shodan InternetDB
+    # 17. Shodan InternetDB (via subfinder output IPs)
     info("Shodan InternetDB")
     try:
-        url = f"https://internetdb.shodan.io/{domain}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read())
-        before = len(all_subs)
-        for host in data.get("hosts", []):
-            if isinstance(host, str):
-                add_sub(host)
-        ok(f"shodan: {len(all_subs) - before} new")
-        sources_ok += 1
+        shodan_found = 0
+        for sub in list(all_subs)[:50]:
+            try:
+                ip = socket.gethostbyname(sub)
+                url = f"https://internetdb.shodan.io/{ip}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read())
+                for host in data.get("hostnames", []):
+                    if host.endswith(domain):
+                        add_sub(host)
+                        shodan_found += 1
+            except:
+                pass
+        ok(f"shodan: {shodan_found} new")
+        if shodan_found > 0:
+            sources_ok += 1
     except:
         fail("shodan: failed")
 
-    # 18. VirusTotal
+    # 18. VirusTotal (needs API key)
     info("VirusTotal")
     try:
         url = f"https://www.virustotal.com/api/v3/domains/{domain}/subdomains?limit=40"
@@ -495,42 +502,63 @@ def phase1_subdomains(domain, results_dir):
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json",
         })
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         before = len(all_subs)
         for item in data.get("data", []):
             add_sub(item.get("id", ""))
         ok(f"virustotal: {len(all_subs) - before} new")
         sources_ok += 1
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            warn("virustotal: needs API key (free at virustotal.com)")
+        else:
+            fail("virustotal: failed")
     except:
         fail("virustotal: failed")
 
     # 19. DNSDumpster
     info("DNSDumpster")
     try:
-        url = f"https://dnsdumpster.com/"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-        before = len(all_subs)
-        found = re.findall(r'(?:https?://)?([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', html)
-        for sub in set(found):
-            add_sub(sub)
-        ok(f"dnsdumpster: {len(all_subs) - before} new")
-        sources_ok += 1
+        import http.cookiejar
+        cj = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        opener.addheaders = [("User-Agent", "Mozilla/5.0")]
+        page = opener.open("https://dnsdumpster.com/", timeout=15)
+        html = page.read().decode("utf-8", errors="replace")
+        csrf_match = re.search(r'csrfmiddlewaretoken["\s]+value=["\']([^"\']+)', html)
+        if csrf_match:
+            token = csrf_match.group(1)
+            data = urllib.parse.urlencode({"targetip": domain, "csrfmiddlewaretoken": token}).encode()
+            req = urllib.request.Request("https://dnsdumpster.com/", data=data)
+            req.add_header("Referer", "https://dnsdumpster.com/")
+            req.add_header("User-Agent", "Mozilla/5.0")
+            resp = opener.open(req, timeout=15)
+            result_html = resp.read().decode("utf-8", errors="replace")
+            before = len(all_subs)
+            found = re.findall(r'([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', result_html)
+            for sub in set(found):
+                add_sub(sub)
+            ok(f"dnsdumpster: {len(all_subs) - before} new")
+            sources_ok += 1
+        else:
+            fail("dnsdumpster: no CSRF token")
     except:
         fail("dnsdumpster: failed")
 
     # 20. Riddler.io
     info("Riddler.io")
     try:
-        url = f"https://riddler.io/api/search?q={domain}"
+        url = f"https://riddler.io-api/search?q={domain}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         before = len(all_subs)
         for item in data:
-            add_sub(item.get("hostname", ""))
+            if isinstance(item, dict):
+                add_sub(item.get("hostname", ""))
+            elif isinstance(item, str):
+                add_sub(item)
         ok(f"riddler: {len(all_subs) - before} new")
         sources_ok += 1
     except:
@@ -539,14 +567,15 @@ def phase1_subdomains(domain, results_dir):
     # 21. FindSubdomains
     info("FindSubdomains")
     try:
-        url = f"https://findsubdomains.com/api/subdomains/{domain}"
+        url = f"https://findsubdomains.com/subdomains-of/{domain}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
         before = len(all_subs)
-        found = re.findall(r'([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', html)
+        found = re.findall(r'(?:https?://|">)([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', html)
         for sub in set(found):
-            add_sub(sub)
+            if not sub.startswith("http"):
+                add_sub(sub)
         ok(f"findsubdomains: {len(all_subs) - before} new")
         sources_ok += 1
     except:
@@ -574,42 +603,52 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("crt.sh email: failed")
 
-    # 23. PassiveTotal (RiskIQ)
+    # 23. PassiveTotal (needs API key)
     info("PassiveTotal")
     try:
         url = f"https://api.passivetotal.org/v2/enrichment/subdomain?query={domain}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         before = len(all_subs)
         for sub in data.get("subdomains", []):
             add_sub(f"{sub}.{domain}")
         ok(f"passivetotal: {len(all_subs) - before} new")
         sources_ok += 1
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            warn("passivetotal: needs API key (free at riskiq.com)")
+        else:
+            fail("passivetotal: failed")
     except:
         fail("passivetotal: failed")
 
-    # 24. WhoisXML API
+    # 24. WhoisXML (needs API key)
     info("WhoisXML")
     try:
         url = f"https://subdomain.whoisxmlapi.com/?apiKey=at_demo&domainName={domain}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         before = len(all_subs)
         for record in data.get("records", []):
             add_sub(record.get("subdomain", ""))
         ok(f"whoisxml: {len(all_subs) - before} new")
         sources_ok += 1
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            warn("whoisxml: needs API key (free at whoisxmlapi.com)")
+        else:
+            fail("whoisxml: failed")
     except:
         fail("whoisxml: failed")
 
-    # 25. SecurityTrails
+    # 25. SecurityTrails (needs API key)
     info("SecurityTrails")
     try:
         url = f"https://api.securitytrails.com/v1/domain/{domain}/subdomains"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
         before = len(all_subs)
         for sub_record in data.get("subdomains", []):
@@ -618,15 +657,23 @@ def phase1_subdomains(domain, results_dir):
                 add_sub(f"{sub}.{domain}")
         ok(f"securitytrails: {len(all_subs) - before} new")
         sources_ok += 1
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            warn("securitytrails: needs API key (free at securitytrails.com)")
+        else:
+            fail("securitytrails: failed")
     except:
         fail("securitytrails: failed")
 
-    sorted_subs = sorted(all_subs)
+    sorted_subs = sorted(all_subs)[:3000]
     save(results_dir, "all_subdomains.txt", "\n".join(sorted_subs))
 
     print(f"\n    {C.DIM}{'─'*50}{C.D}")
     stat("Sources", f"{sources_ok}/{sources_total} responded")
-    stat("Total subdomains", f"{C.BG}{len(sorted_subs)}{C.D}")
+    stat("Total subdomains", f"{C.BG}{len(all_subs)}{C.D}")
+    if len(all_subs) > 3000:
+        warn(f"Capped to 3,000 for performance (found {len(all_subs)})")
+    stat("Selected for scan", f"{C.BG}{len(sorted_subs)}{C.D}")
     print(f"    {C.DIM}{'─'*50}{C.D}")
 
     for s in sorted_subs[:30]:
@@ -646,13 +693,16 @@ def phase2_dns(domain, subdomains, results_dir):
     if not subdomains:
         return []
 
+    subs_to_resolve = subdomains[:3000]
+    info(f"Resolving {len(subs_to_resolve)} subdomains (limited from {len(subdomains)})")
+
     infile = results_dir / "dns_input.txt"
-    infile.write_text("\n".join(subdomains), encoding="utf-8")
+    infile.write_text("\n".join(subs_to_resolve), encoding="utf-8")
 
     info("Resolving subdomains via dnsx")
     start_spinner("Resolving DNS records")
     outfile = results_dir / "dns_results.txt"
-    run_cmd(f'dnsx -l "{infile}" -o "{outfile}" -silent -a -aaaa -cname -mx -ns -txt -resp -retry 3', timeout=300, silent=True)
+    run_cmd(f'dnsx -l "{infile}" -o "{outfile}" -silent -a -aaaa -retry 1 -t 50 -rl 500', timeout=120, silent=True)
     stop_spinner()
 
     ips = set()
