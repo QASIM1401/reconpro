@@ -255,7 +255,7 @@ def phase1_subdomains(domain, results_dir):
     phase_header(1, "SUBDOMAIN ENUMERATION")
     all_subs = set()
     sources_ok = 0
-    sources_total = 26
+    sources_total = 25
 
     def add_sub(sub):
         sub = sub.strip().lower()
@@ -708,30 +708,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("whoisxml: failed")
 
-    # 25. C99 Subdomain Finder (needs API key — free at api.c99.nl)
-    info("C99 SubdomainFinder")
-    c99_key = os.environ.get("C99_API_KEY", "")
-    if c99_key:
-        try:
-            url = f"https://api.c99.nl/subdomainfinder?key={c99_key}&domain={domain}&json"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read())
-            before = len(all_subs)
-            for record in data:
-                if isinstance(record, dict):
-                    add_sub(record.get("subdomain", ""))
-                    add_sub(record.get("host", ""))
-                elif isinstance(record, str):
-                    add_sub(record)
-            ok(f"c99.nl: {len(all_subs) - before} new")
-            sources_ok += 1
-        except:
-            fail("c99.nl: API error")
-    else:
-        warn("c99.nl: needs API key (set C99_API_KEY env var, free at api.c99.nl)")
-
-    # 26. SecurityTrails (needs API key)
+    # 25. SecurityTrails (needs API key)
     info("SecurityTrails")
     try:
         url = f"https://api.securitytrails.com/v1/domain/{domain}/subdomains"
