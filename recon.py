@@ -255,7 +255,7 @@ def phase1_subdomains(domain, results_dir):
     phase_header(1, "SUBDOMAIN ENUMERATION")
     all_subs = set()
     sources_ok = 0
-    sources_total = 25
+    sources_total = 28
 
     def add_sub(sub):
         sub = sub.strip().lower()
@@ -582,7 +582,40 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("virustotal: failed")
 
-    # 19. DNSDumpster
+    # 23. alterx (permutation mutations from found subdomains)
+    info("alterx (permutations)")
+    if check_tool("alterx") and all_subs:
+        try:
+            alterx_in = results_dir / "alterx_input.txt"
+            alterx_in.write_text("\n".join(list(all_subs)[:200]), encoding="utf-8")
+            alterx_out = results_dir / "alterx_output.txt"
+            run_cmd(f'alterx -list "{alterx_in}" -o "{alterx_out}" -silent', timeout=60, silent=True)
+            if alterx_out.exists():
+                before = len(all_subs)
+                for line in alterx_out.read_text().splitlines():
+                    add_sub(line.strip())
+                ok(f"alterx: {len(all_subs) - before} new permutations")
+                sources_ok += 1
+        except:
+            fail("alterx: failed")
+    else:
+        fail("alterx: not installed")
+
+    # 24. sublist3r (Python subdomain brute)
+    info("sublist3r")
+    try:
+        sublist_out = results_dir / "sublist3r.txt"
+        run_cmd(f'python -m sublist3r -d {domain} -o "{sublist_out}" -b', timeout=60, silent=True)
+        if sublist_out.exists():
+            before = len(all_subs)
+            for line in sublist_out.read_text().splitlines():
+                add_sub(line.strip())
+            ok(f"sublist3r: {len(all_subs) - before} new")
+            sources_ok += 1
+    except:
+        fail("sublist3r: failed")
+
+    # 25. DNSDumpster
     info("DNSDumpster")
     try:
         import http.cookiejar
@@ -611,7 +644,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("dnsdumpster: failed")
 
-    # 20. Riddler.io
+    # 26. Riddler.io
     info("Riddler.io")
     try:
         url = f"https://riddler.io-api/search?q={domain}"
@@ -629,7 +662,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("riddler: failed")
 
-    # 21. FindSubdomains
+    # 27. FindSubdomains
     info("FindSubdomains")
     try:
         url = f"https://findsubdomains.com/subdomains-of/{domain}"
@@ -646,7 +679,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("findsubdomains: failed")
 
-    # 22. crt.sh email reverse
+    # 28. crt.sh email reverse
     info("crt.sh (email reverse)")
     try:
         url = f"https://crt.sh/?q=%25%25.{domain}&output=json"
@@ -667,68 +700,6 @@ def phase1_subdomains(domain, results_dir):
         sources_ok += 1
     except:
         fail("crt.sh email: failed")
-
-    # 23. PassiveTotal (needs API key)
-    info("PassiveTotal")
-    try:
-        url = f"https://api.passivetotal.org/v2/enrichment/subdomain?query={domain}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        before = len(all_subs)
-        for sub in data.get("subdomains", []):
-            add_sub(f"{sub}.{domain}")
-        ok(f"passivetotal: {len(all_subs) - before} new")
-        sources_ok += 1
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            warn("passivetotal: needs API key (free at riskiq.com)")
-        else:
-            fail("passivetotal: failed")
-    except:
-        fail("passivetotal: failed")
-
-    # 24. WhoisXML (needs API key)
-    info("WhoisXML")
-    try:
-        url = f"https://subdomain.whoisxmlapi.com/?apiKey=at_demo&domainName={domain}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        before = len(all_subs)
-        for record in data.get("records", []):
-            add_sub(record.get("subdomain", ""))
-        ok(f"whoisxml: {len(all_subs) - before} new")
-        sources_ok += 1
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
-            warn("whoisxml: needs API key (free at whoisxmlapi.com)")
-        else:
-            fail("whoisxml: failed")
-    except:
-        fail("whoisxml: failed")
-
-    # 25. SecurityTrails (needs API key)
-    info("SecurityTrails")
-    try:
-        url = f"https://api.securitytrails.com/v1/domain/{domain}/subdomains"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        before = len(all_subs)
-        for sub_record in data.get("subdomains", []):
-            sub = sub_record.get("subdomain", "")
-            if sub:
-                add_sub(f"{sub}.{domain}")
-        ok(f"securitytrails: {len(all_subs) - before} new")
-        sources_ok += 1
-    except urllib.error.HTTPError as e:
-        if e.code == 403:
-            warn("securitytrails: needs API key (free at securitytrails.com)")
-        else:
-            fail("securitytrails: failed")
-    except:
-        fail("securitytrails: failed")
 
     # Filter out internal/corporate subdomains
     filtered, skipped = filter_internal(all_subs, domain)
@@ -1368,10 +1339,10 @@ def main():
     stat("Output", str(results_dir.absolute()), C.BC)
 
     tools_found = []
-    for t in ["subfinder", "amass", "dnsx", "naabu", "httpx", "whois"]:
+    for t in ["subfinder", "amass", "dnsx", "naabu", "httpx", "puredns", "alterx", "whois"]:
         if check_tool(t):
             tools_found.append(t)
-    stat("Tools", f"{len(tools_found)}/6 available", C.BY)
+    stat("Tools", f"{len(tools_found)}/8 available", C.BY)
     print(f"    {C.DIM}{'─'*50}{C.D}\n")
 
     data = {}

@@ -34,15 +34,15 @@ echo  [OK] Python
 
 REM === CHECK PIP ===
 echo.
-echo [2/4] Checking pip...
+echo [2/5] Checking pip...
 pip --version >nul 2>&1
 if %errorlevel% neq 0 python -m ensurepip --default-pip >nul 2>&1
 echo  [OK] pip
 
 REM === INSTALL PACKAGES ===
 echo.
-echo [3/4] Installing packages...
-pip install python-whois requests aiohttp --quiet --disable-pip-version-check 2>nul
+echo [3/5] Installing Python packages...
+pip install python-whois requests aiohttp sublist3r dnsgen --quiet --disable-pip-version-check 2>nul
 echo  [OK] packages
 
 REM === CHECK GO ===
@@ -69,7 +69,7 @@ echo  [OK] Go
 
 REM === INSTALL GO TOOLS ===
 echo.
-echo [4/4] Installing Go tools (2-5 min)...
+echo [4/5] Installing Go tools (3-8 min)...
 
 echo  subfinder...
 go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 2>nul
@@ -79,11 +79,15 @@ echo  naabu...
 go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest 2>nul
 echo  dnsx...
 go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest 2>nul
+echo  puredns...
+go install github.com/d3mondev/puredns/v2@latest 2>nul
+echo  alterx...
+go install github.com/projectdiscovery/alterx/cmd/alterx@latest 2>nul
 
+REM === FINAL CHECK ===
 echo.
-echo  ========================================
-echo   Final check
-echo  ========================================
+echo [5/5] Final check...
+echo.
 
 set OK=0
 python --version >nul 2>&1 && (echo  [OK] Python & set /a OK=OK+1) || echo  [!!] Python
@@ -92,9 +96,15 @@ where subfinder >nul 2>&1 && (echo  [OK] subfinder & set /a OK=OK+1) || echo  [!
 where httpx >nul 2>&1 && (echo  [OK] httpx & set /a OK=OK+1) || echo  [!!] httpx
 where naabu >nul 2>&1 && (echo  [OK] naabu & set /a OK=OK+1) || echo  [!!] naabu
 where dnsx >nul 2>&1 && (echo  [OK] dnsx & set /a OK=OK+1) || echo  [!!] dnsx
+where puredns >nul 2>&1 && (echo  [OK] puredns & set /a OK=OK+1) || echo  [!!] puredns
+where alterx >nul 2>&1 && (echo  [OK] alterx & set /a OK=OK+1) || echo  [!!] alterx
+python -c "import sublist3r" 2>nul && (echo  [OK] sublist3r & set /a OK=OK+1) || echo  [!!] sublist3r
+python -c "import dnsgen" 2>nul && (echo  [OK] dnsgen & set /a OK=OK+1) || echo  [!!] dnsgen
 
 echo.
-echo  Ready: %OK%/6 tools
+echo  ========================================
+echo   Ready: %OK%/10 tools
+echo  ========================================
 echo  Run: python recon.py
 echo.
 pause
