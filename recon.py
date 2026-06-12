@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CYBERSCOUT v3.1 - Red Team Recon Pipeline
+RECONPRO v3.1 - Red Team Recon Pipeline
 Advanced Attack Surface Mapping & Reconnaissance
 """
 
@@ -835,10 +835,10 @@ def generate_report(domain, results_dir, data, elapsed):
     report = results_dir / "REPORT.md"
     lines = []
 
-    lines.append(f"# CYBERSCOUT Recon Report: {domain}")
+    lines.append(f"# RECONPRO Recon Report: {domain}")
     lines.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"**Scan Time:** {timer_str(elapsed)}")
-    lines.append(f"**Pipeline:** CYBERSCOUT v3.1\n")
+    lines.append(f"**Pipeline:** RECONPRO v3.1\n")
 
     lines.append("## Executive Summary")
     lines.append(f"- **Subdomains:** {len(data.get('subdomains', []))}")

@@ -1,4 +1,4 @@
-# CYBERSCOUT
+# RECONPRO
 
 **Advanced Red Team Reconnaissance Pipeline with Animated Terminal UI**
 
@@ -127,8 +127,8 @@ A comprehensive 8-phase red team reconnaissance pipeline with **15 subdomain sou
 
 ```bash
 # Clone the repo
-git clone https://github.com/QASIM1401/cyberscout.git
-cd cyberscout
+git clone https://github.com/QASIM1401/reconpro.git
+cd reconpro
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -152,7 +152,7 @@ python recon.py
 ```
 
 The tool will:
-1. Show the CYBERSCOUT banner
+1. Show the RECONPRO banner
 2. Prompt `❯ Target: ` — enter your domain
 3. Run all 8 phases with animated output
 4. Save results to `recon_<domain>_<timestamp>/`
