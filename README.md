@@ -10,11 +10,11 @@
                                                                        
 ```
 
-A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
+A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-green?logo=windows&logoColor=white)
-![Tools](https://img.shields.io/badge/Tools-25+-orange)
+![Tools](https://img.shields.io/badge/Tools-28-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Version](https://img.shields.io/badge/Version-3.1-cyan)
 
@@ -24,9 +24,11 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 
 - **Prompt-Based Interactive UI** — Enter target domain, no CLI args needed
 - **Animated Terminal** — Spinners, progress bars, phase indicators
-- **15+ Subdomain Sources** — Maximum coverage from free APIs
+- **28 Subdomain Sources** — Maximum coverage from free APIs + tools
 - **Batch Processing** — No more timeouts on large targets
-- **Hidden IP Range Detection** — Find /24 CIDR patterns
+- **Internal Subdomain Filtering** — Auto-removes *.corp.*, *.internal.*, etc.
+- **IP Deduplication** — Scans 1 subdomain per unique IP (saves time)
+- **Priority Sorting** — Public-facing subs scanned first (www, api, dev, etc.)
 - **Custom Deep Crawler** — Async Python crawler, finds hidden APIs, JS endpoints, comments, forms
 - **Cross-Platform** — Works on Windows & Linux
 - **Professional Reports** — Markdown with risk assessment
@@ -44,7 +46,7 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 
 ├─ Target:      tesla.com
 ├─ Output:      recon_tesla.com_20260612_085125
-├─ Tools:       5/7 available
+├─ Tools:       8/10 available
 ──────────────────────────────────────────────────
 
 ● ○ ○ ○ ○ ○ ○ ○  PHASE 1/8: SUBDOMAIN ENUMERATION
@@ -82,10 +84,10 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 
 | Phase | Name | Description |
 |-------|------|-------------|
-| 1 | Subdomain Enumeration | 15 sources + DNS brute force |
+| 1 | Subdomain Enumeration | 28 sources + DNS brute force + permutations |
 | 2 | DNS Resolution | Bulk resolve + hidden IP ranges |
 | 3 | Port Scanning | Batched naabu (19 ports) |
-| 4 | HTTP Probing | Batched httpx with tech detection |
+| 4 | HTTP Probing | Batched httpx with tech detection + IP dedup |
 | 5 | Web Crawling | Custom deep async crawler |
 | 6 | Sensitive File Discovery | .env, .git, phpinfo, etc. |
 | 7 | Domain Information | WHOIS, DNS records, Google dorks |
@@ -93,7 +95,7 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 
 ---
 
-## Subdomain Sources (25+)
+## Subdomain Sources (28)
 
 | # | Source | Type |
 |---|--------|------|
@@ -115,13 +117,13 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 | 16 | ProjectDiscovery Chaos | Bug bounty dataset |
 | 17 | Shodan InternetDB | IoT/device discovery |
 | 18 | VirusTotal | Malware intelligence |
-| 19 | DNSDumpster | DNS recon |
-| 20 | Riddler.io | Passive DNS |
-| 21 | FindSubdomains | Subdomain finder |
-| 22 | crt.sh email (reverse) | Certificate + email |
-| 23 | PassiveTotal | Risk intelligence |
-| 24 | WhoisXML API | Whois data |
-| 25 | SecurityTrails | Historical DNS |
+| 19 | alterx | Permutation mutations |
+| 20 | sublist3r | Multi-engine brute |
+| 21 | DNSDumpster | DNS recon |
+| 22 | Riddler.io | Passive DNS |
+| 23 | FindSubdomains | Subdomain finder |
+| 24 | crt.sh email (reverse) | Certificate + email |
+| 25 | dnsgen | DNS wordlist generator |
 
 ---
 
@@ -132,21 +134,30 @@ A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, 
 - **Python 3.8+** — [python.org](https://www.python.org/downloads/)
 - **Go 1.21+** — [go.dev](https://go.dev/dl/)
 
-### Quick Install
+### Quick Install (Windows)
 
 ```bash
 # Clone the repo
 git clone https://github.com/QASIM1401/reconpro.git
 cd reconpro
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Run auto-installer (installs everything)
+install.bat
+```
 
-# Install Go tools (required)
+### Manual Install
+
+```bash
+# Python packages
+pip install python-whois requests aiohttp sublist3r dnsgen
+
+# Go tools
 go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install -v github.com/d3mondev/puredns/v2@latest
+go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest
 ```
 
 ---
@@ -177,6 +188,10 @@ recon_example.com_20260612_085125/
 ├── port_services.json     # Port → service mapping
 ├── live_hosts.txt         # Live HTTP hosts with tech
 ├── interesting_urls.txt   # Crawled URLs (admin, API, etc.)
+├── api_endpoints.txt      # Discovered API endpoints
+├── parameters.txt         # Found parameters
+├── forms.json             # Extracted forms
+├── comments.json          # Interesting comments
 ├── whois.txt              # WHOIS data
 ├── dns_records.json       # DNS records
 ├── google_dorks.txt       # Dorking queries
@@ -193,6 +208,10 @@ recon_example.com_20260612_085125/
 | httpx | HTTP probing + tech detection | Yes |
 | naabu | Port scanning | Yes |
 | dnsx | DNS resolution | Yes |
+| puredns | Fast DNS bruteforce | No |
+| alterx | Permutation mutations | No |
+| sublist3r | Multi-engine subdomain brute | No |
+| dnsgen | DNS wordlist generator | No |
 | Python aiohttp | Custom deep web crawler | Yes |
 | whois | Domain information | No |
 
