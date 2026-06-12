@@ -120,7 +120,7 @@ def banner():
     
     {C.BG}  Red Team Recon Pipeline v3.1{C.D}
     {C.BY}  Advanced Attack Surface Mapping{C.D}
-    {C.DIM}  15+ Free Subdomain Sources | Animated Terminal | Cross-Platform{C.D}
+    {C.DIM}  25+ Free Subdomain Sources | Custom Deep Crawler | Cross-Platform{C.D}
     
     {LINE*72}{C.D}"""
     print(b)
@@ -193,7 +193,7 @@ def phase1_subdomains(domain, results_dir):
     phase_header(1, "SUBDOMAIN ENUMERATION")
     all_subs = set()
     sources_ok = 0
-    sources_total = 15
+    sources_total = 25
 
     def add_sub(sub):
         sub = sub.strip().lower()
@@ -451,6 +451,175 @@ def phase1_subdomains(domain, results_dir):
             add_sub(line.split()[0] if line.strip() else "")
         ok(f"brute force: {len(all_subs) - before} found")
         sources_ok += 1
+
+    # 16. ProjectDiscovery Chaos
+    info("ProjectDiscovery Chaos")
+    try:
+        url = f"https://chaos.projectdiscovery.com/public?domain={domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for sub in data.get("subdomains", []):
+            fqdn = sub.get("host", "")
+            if not fqdn and isinstance(sub, str):
+                fqdn = sub
+            if fqdn:
+                add_sub(fqdn)
+        ok(f"chaos: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("chaos: failed")
+
+    # 17. Shodan InternetDB
+    info("Shodan InternetDB")
+    try:
+        url = f"https://internetdb.shodan.io/{domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for host in data.get("hosts", []):
+            if isinstance(host, str):
+                add_sub(host)
+        ok(f"shodan: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("shodan: failed")
+
+    # 18. VirusTotal
+    info("VirusTotal")
+    try:
+        url = f"https://www.virustotal.com/api/v3/domains/{domain}/subdomains?limit=40"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for item in data.get("data", []):
+            add_sub(item.get("id", ""))
+        ok(f"virustotal: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("virustotal: failed")
+
+    # 19. DNSDumpster
+    info("DNSDumpster")
+    try:
+        url = f"https://dnsdumpster.com/"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        before = len(all_subs)
+        found = re.findall(r'(?:https?://)?([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', html)
+        for sub in set(found):
+            add_sub(sub)
+        ok(f"dnsdumpster: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("dnsdumpster: failed")
+
+    # 20. Riddler.io
+    info("Riddler.io")
+    try:
+        url = f"https://riddler.io/api/search?q={domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for item in data:
+            add_sub(item.get("hostname", ""))
+        ok(f"riddler: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("riddler: failed")
+
+    # 21. FindSubdomains
+    info("FindSubdomains")
+    try:
+        url = f"https://findsubdomains.com/api/subdomains/{domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        before = len(all_subs)
+        found = re.findall(r'([a-zA-Z0-9._-]+\.' + re.escape(domain) + r')', html)
+        for sub in set(found):
+            add_sub(sub)
+        ok(f"findsubdomains: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("findsubdomains: failed")
+
+    # 22. crt.sh email reverse
+    info("crt.sh (email reverse)")
+    try:
+        url = f"https://crt.sh/?q=%25%25.{domain}&output=json"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for entry in data:
+            for sub in entry.get("name_value", "").split("\n"):
+                add_sub(sub)
+            email = entry.get("issuer_name", "")
+            email_match = re.search(r'CN=([^@]+@[^@]+)', email)
+            if email_match:
+                email_domain = email_match.group(1).split("@")[-1]
+                if email_domain.endswith(domain):
+                    add_sub(email_domain)
+        ok(f"crt.sh email: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("crt.sh email: failed")
+
+    # 23. PassiveTotal (RiskIQ)
+    info("PassiveTotal")
+    try:
+        url = f"https://api.passivetotal.org/v2/enrichment/subdomain?query={domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for sub in data.get("subdomains", []):
+            add_sub(f"{sub}.{domain}")
+        ok(f"passivetotal: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("passivetotal: failed")
+
+    # 24. WhoisXML API
+    info("WhoisXML")
+    try:
+        url = f"https://subdomain.whoisxmlapi.com/?apiKey=at_demo&domainName={domain}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for record in data.get("records", []):
+            add_sub(record.get("subdomain", ""))
+        ok(f"whoisxml: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("whoisxml: failed")
+
+    # 25. SecurityTrails
+    info("SecurityTrails")
+    try:
+        url = f"https://api.securitytrails.com/v1/domain/{domain}/subdomains"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        before = len(all_subs)
+        for sub_record in data.get("subdomains", []):
+            sub = sub_record.get("subdomain", "")
+            if sub:
+                add_sub(f"{sub}.{domain}")
+        ok(f"securitytrails: {len(all_subs) - before} new")
+        sources_ok += 1
+    except:
+        fail("securitytrails: failed")
 
     sorted_subs = sorted(all_subs)
     save(results_dir, "all_subdomains.txt", "\n".join(sorted_subs))

@@ -10,11 +10,11 @@
                                                                        
 ```
 
-A comprehensive 8-phase red team reconnaissance pipeline with **15 subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
+A comprehensive 8-phase red team reconnaissance pipeline with **25+ subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-green?logo=windows&logoColor=white)
-![Tools](https://img.shields.io/badge/Tools-15+-orange)
+![Tools](https://img.shields.io/badge/Tools-25+-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Version](https://img.shields.io/badge/Version-3.1-cyan)
 
@@ -24,10 +24,10 @@ A comprehensive 8-phase red team reconnaissance pipeline with **15 subdomain sou
 
 - **Prompt-Based Interactive UI** — Enter target domain, no CLI args needed
 - **Animated Terminal** — Spinners, progress bars, phase indicators
-- **15 Subdomain Sources** — Maximum coverage from free APIs
+- **15+ Subdomain Sources** — Maximum coverage from free APIs
 - **Batch Processing** — No more timeouts on large targets
 - **Hidden IP Range Detection** — Find /24 CIDR patterns
-- **Web Crawling** — katana integration for URL discovery
+- **Custom Deep Crawler** — Async Python crawler, finds hidden APIs, JS endpoints, comments, forms
 - **Cross-Platform** — Works on Windows & Linux
 - **Professional Reports** — Markdown with risk assessment
 
@@ -86,14 +86,14 @@ A comprehensive 8-phase red team reconnaissance pipeline with **15 subdomain sou
 | 2 | DNS Resolution | Bulk resolve + hidden IP ranges |
 | 3 | Port Scanning | Batched naabu (19 ports) |
 | 4 | HTTP Probing | Batched httpx with tech detection |
-| 5 | Web Crawling | katana URL discovery |
+| 5 | Web Crawling | Custom deep async crawler |
 | 6 | Sensitive File Discovery | .env, .git, phpinfo, etc. |
 | 7 | Domain Information | WHOIS, DNS records, Google dorks |
 | 8 | Final Report | Markdown report + summary |
 
 ---
 
-## Subdomain Sources (15)
+## Subdomain Sources (25+)
 
 | # | Source | Type |
 |---|--------|------|
@@ -112,6 +112,16 @@ A comprehensive 8-phase red team reconnaissance pipeline with **15 subdomain sou
 | 13 | Wayback Machine | URL history |
 | 14 | ThreatMiner | Threat intelligence |
 | 15 | DNS brute force | Active enumeration |
+| 16 | ProjectDiscovery Chaos | Bug bounty dataset |
+| 17 | Shodan InternetDB | IoT/device discovery |
+| 18 | VirusTotal | Malware intelligence |
+| 19 | DNSDumpster | DNS recon |
+| 20 | Riddler.io | Passive DNS |
+| 21 | FindSubdomains | Subdomain finder |
+| 22 | crt.sh email (reverse) | Certificate + email |
+| 23 | PassiveTotal | Risk intelligence |
+| 24 | WhoisXML API | Whois data |
+| 25 | SecurityTrails | Historical DNS |
 
 ---
 
@@ -137,9 +147,6 @@ go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-
-# Optional: Install katana for web crawling
-go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 ```
 
 ---
@@ -186,7 +193,7 @@ recon_example.com_20260612_085125/
 | httpx | HTTP probing + tech detection | Yes |
 | naabu | Port scanning | Yes |
 | dnsx | DNS resolution | Yes |
-| katana | Web crawling | No |
+| Python aiohttp | Custom deep web crawler | Yes |
 | whois | Domain information | No |
 
 ---

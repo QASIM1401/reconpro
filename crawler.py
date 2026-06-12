@@ -2,7 +2,7 @@
 """
 RECONPRO Custom Web Crawler - Deep Async Crawler
 Finds hidden endpoints, JS APIs, comments, sitemaps, parameters
-Better than katana/gospider/hakrawler for bug bounty recon
+Better than gospider/hakrawler for bug bounty recon
 """
 
 import asyncio
