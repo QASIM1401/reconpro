@@ -182,7 +182,7 @@ def banner():
     
     {C.BG}  Red Team Recon Pipeline v3.1{C.D}
     {C.BY}  Advanced Attack Surface Mapping{C.D}
-    {C.DIM}  25+ Free Subdomain Sources | Custom Deep Crawler | Cross-Platform{C.D}
+    {C.DIM}  24 Subdomain Sources | Custom Deep Crawler | Cross-Platform{C.D}
     
     {LINE*72}{C.D}"""
     print(b)
@@ -255,7 +255,7 @@ def phase1_subdomains(domain, results_dir):
     phase_header(1, "SUBDOMAIN ENUMERATION")
     all_subs = set()
     sources_ok = 0
-    sources_total = 28
+    sources_total = 24
 
     def add_sub(sub):
         sub = sub.strip().lower()
@@ -582,7 +582,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("virustotal: failed")
 
-    # 23. alterx (permutation mutations from found subdomains)
+    # 19. alterx (permutation mutations from found subdomains)
     info("alterx (permutations)")
     if check_tool("alterx") and all_subs:
         try:
@@ -601,7 +601,7 @@ def phase1_subdomains(domain, results_dir):
     else:
         fail("alterx: not installed")
 
-    # 24. sublist3r (Python subdomain brute)
+    # 20. sublist3r (Python subdomain brute)
     info("sublist3r")
     try:
         sublist_out = results_dir / "sublist3r.txt"
@@ -615,7 +615,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("sublist3r: failed")
 
-    # 25. DNSDumpster
+    # 21. DNSDumpster
     info("DNSDumpster")
     try:
         import http.cookiejar
@@ -644,7 +644,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("dnsdumpster: failed")
 
-    # 26. Riddler.io
+    # 22. Riddler.io
     info("Riddler.io")
     try:
         url = f"https://riddler.io-api/search?q={domain}"
@@ -662,7 +662,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("riddler: failed")
 
-    # 27. FindSubdomains
+    # 23. FindSubdomains
     info("FindSubdomains")
     try:
         url = f"https://findsubdomains.com/subdomains-of/{domain}"
@@ -679,7 +679,7 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("findsubdomains: failed")
 
-    # 28. crt.sh email reverse
+    # 24. crt.sh email reverse
     info("crt.sh (email reverse)")
     try:
         url = f"https://crt.sh/?q=%25%25.{domain}&output=json"

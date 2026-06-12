@@ -10,11 +10,11 @@
                                                                        
 ```
 
-A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
+A comprehensive 8-phase reconnaissance pipeline with **24 subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-green?logo=windows&logoColor=white)
-![Tools](https://img.shields.io/badge/Tools-28-orange)
+![Tools](https://img.shields.io/badge/Tools-24-orange)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Version](https://img.shields.io/badge/Version-3.1-cyan)
 
@@ -24,7 +24,7 @@ A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, a
 
 - **Prompt-Based Interactive UI** — Enter target domain, no CLI args needed
 - **Animated Terminal** — Spinners, progress bars, phase indicators
-- **28 Subdomain Sources** — Maximum coverage from free APIs + tools
+- **24 Subdomain Sources** — Maximum coverage from free APIs + tools
 - **Batch Processing** — No more timeouts on large targets
 - **Internal Subdomain Filtering** — Auto-removes *.corp.*, *.internal.*, etc.
 - **IP Deduplication** — Scans 1 subdomain per unique IP (saves time)
@@ -84,7 +84,7 @@ A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, a
 
 | Phase | Name | Description |
 |-------|------|-------------|
-| 1 | Subdomain Enumeration | 28 sources + DNS brute force + permutations |
+| 1 | Subdomain Enumeration | 24 sources + DNS brute force + permutations |
 | 2 | DNS Resolution | Bulk resolve + hidden IP ranges |
 | 3 | Port Scanning | Batched naabu (19 ports) |
 | 4 | HTTP Probing | Batched httpx with tech detection + IP dedup |
@@ -95,7 +95,7 @@ A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, a
 
 ---
 
-## Subdomain Sources (28)
+## Subdomain Sources (24)
 
 | # | Source | Type |
 |---|--------|------|
@@ -123,7 +123,6 @@ A comprehensive 8-phase reconnaissance pipeline with **28 subdomain sources**, a
 | 22 | Riddler.io | Passive DNS |
 | 23 | FindSubdomains | Subdomain finder |
 | 24 | crt.sh email (reverse) | Certificate + email |
-| 25 | dnsgen | DNS wordlist generator |
 
 ---
 
@@ -143,6 +142,15 @@ cd reconpro
 
 # Run auto-installer (installs everything)
 install.bat
+```
+
+### Quick Install (Linux/Kali)
+
+```bash
+git clone https://github.com/QASIM1401/reconpro.git
+cd reconpro
+chmod +x install.sh
+./install.sh
 ```
 
 ### Manual Install
