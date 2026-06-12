@@ -14,6 +14,7 @@ import random
 import shutil
 import urllib.request
 import urllib.parse
+import urllib.error
 import socket
 import asyncio
 from pathlib import Path
@@ -202,18 +203,21 @@ def phase1_subdomains(domain, results_dir):
 
     # 1. subfinder
     info("subfinder (primary)")
-    start_spinner("Running subfinder")
-    outfile = results_dir / "subfinder.txt"
-    run_cmd(f'subfinder -d {domain} -o "{outfile}" -silent -timeout 60 -all', timeout=300, silent=True)
-    stop_spinner()
-    if outfile.exists():
-        for line in outfile.read_text().splitlines():
-            add_sub(line)
-        cnt = len([l for l in outfile.read_text().splitlines() if l.strip()])
-        ok(f"subfinder: {cnt} subdomains")
-        sources_ok += 1
+    if check_tool("subfinder"):
+        start_spinner("Running subfinder")
+        outfile = results_dir / "subfinder.txt"
+        run_cmd(f'subfinder -d {domain} -o "{outfile}" -silent -timeout 60 -all', timeout=300, silent=True)
+        stop_spinner()
+        if outfile.exists():
+            for line in outfile.read_text().splitlines():
+                add_sub(line)
+            cnt = len([l for l in outfile.read_text().splitlines() if l.strip()])
+            ok(f"subfinder: {cnt} subdomains")
+            sources_ok += 1
+        else:
+            fail("subfinder: no results")
     else:
-        fail("subfinder: no results")
+        fail("subfinder: not installed")
 
     # 2. crt.sh (API)
     info("crt.sh (certificate transparency)")
