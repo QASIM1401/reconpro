@@ -15,6 +15,7 @@ import shutil
 import urllib.request
 import urllib.parse
 import socket
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -110,12 +111,10 @@ def banner():
     b = f"""{C.BOLD}{C.BC}
     {LINE*72}
     
-       ██████╗██╗   ██╗██████╗ ███████╗██████╗ ████████╗███████╗██████╗ ███╗   ███╗
-      ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██╔════╝██╔══██╗████╗ ████║
-      ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝   ██║   █████╗  ██████╔╝██╔████╔██║
-      ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗   ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║
-      ╚██████╗   ██║   ██████╔╝███████╗██║  ██║   ██║   ███████╗██║  ██║██║ ╚═╝ ██║
-       ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝
+      ▄█████ ██  ██ █████▄ ██████ █████▄  ▄█████ ▄█████ ▄████▄ ██  ██ ██████ 
+      ██      ▀██▀  ██▄▄██ ██▄▄   ██▄▄██▄ ▀▀▀▄▄▄ ██     ██  ██ ██  ██   ██   
+      ▀█████   ██   ██▄▄█▀ ██▄▄▄▄ ██   ██ █████▀ ▀█████ ▀████▀ ▀████▀   ██   
+                                                                       
     
     {C.BG}  Red Team Recon Pipeline v3.1{C.D}
     {C.BY}  Advanced Attack Surface Mapping{C.D}
@@ -658,13 +657,16 @@ def phase4_http(subdomains, results_dir):
 
 
 # ─────────────────────────────────────────────
-# PHASE 5: Web Crawling (katana)
+# PHASE 5: Web Crawling (Custom Deep Crawler)
 # ─────────────────────────────────────────────
 def phase5_crawl(domain, live_hosts, results_dir):
     phase_header(5, "WEB CRAWLING")
 
-    if not check_tool("katana"):
-        warn("katana not installed, skipping")
+    sys.path.insert(0, SCRIPT_DIR)
+    try:
+        from crawler import DeepCrawler, print_result
+    except ImportError:
+        fail("crawler.py not found")
         return []
 
     target_urls = []
@@ -677,47 +679,78 @@ def phase5_crawl(domain, live_hosts, results_dir):
     if not target_urls:
         target_urls = [f"https://{domain}"]
 
-    batch_size = 50
-    total_batches = min(len(target_urls), 200) // batch_size + 1
+    max_hosts = min(len(target_urls), 200)
     all_urls = []
+    all_interesting = []
+    all_api = []
+    all_forms = []
+    all_params = []
+    all_comments = []
 
-    info(f"Crawling up to {min(len(target_urls), 200)} hosts")
-    for i in range(0, min(len(target_urls), 200), batch_size):
+    info(f"Deep crawling {max_hosts} hosts (depth=3, concurrency=30)")
+
+    async def crawl_batch(hosts_batch, batch_idx):
+        crawler = DeepCrawler(max_depth=3, max_pages=100, concurrency=30, timeout=10)
+        batch_results = []
+        for url in hosts_batch:
+            parsed_url = urllib.parse.urlparse(url)
+            host_domain = parsed_url.hostname
+            if host_domain:
+                result = await crawler.crawl(url, host_domain)
+                batch_results.append(result)
+                crawler = DeepCrawler(max_depth=3, max_pages=100, concurrency=30, timeout=10)
+        return batch_results
+
+    batch_size = 50
+    for i in range(0, max_hosts, batch_size):
         batch = target_urls[i:i+batch_size]
-        urls_file = results_dir / f"katana_input_{i}.txt"
-        urls_file.write_text("\n".join(batch), encoding="utf-8")
-        batch_out = results_dir / f"katana_out_{i}.txt"
-        progress_bar(i // batch_size + 1, total_batches, "katana")
-        run_cmd(
-            f'katana -l "{urls_file}" -o "{batch_out}" -silent -d 3 -jc -ct 30 -timeout 15',
-            timeout=180, silent=True
-        )
-        if batch_out.exists():
-            all_urls.extend(batch_out.read_text().splitlines())
-        urls_file.unlink(missing_ok=True)
-        batch_out.unlink(missing_ok=True)
+        progress_bar(i // batch_size + 1, (max_hosts - 1) // batch_size + 1, "crawling")
+        try:
+            results = asyncio.run(crawl_batch(batch, i // batch_size))
+            for r in results:
+                all_urls.extend(r.get("urls", []))
+                all_interesting.extend(r.get("interesting", []))
+                all_api.extend(r.get("api_endpoints", []))
+                all_forms.extend(r.get("forms", []))
+                all_params.extend(r.get("params", []))
+                all_comments.extend(r.get("comments", []))
+        except Exception as e:
+            warn(f"Batch {i//batch_size + 1} error: {e}")
     print()
 
-    all_urls = sorted(set([l.strip() for l in all_urls if l.strip()]))
+    all_urls = sorted(set(all_urls))
+    all_interesting = sorted(set(all_interesting))
+    all_api = sorted(set(all_api))
+    all_params = sorted(set(all_params))
 
-    interesting = []
-    keywords = [".env", ".git", "admin", "login", "config", "backup", "api",
-                 "debug", "phpinfo", "info.php", "test", "console", ".sql",
-                 ".bak", "upload", "trace", "actuator", "swagger", "graphql",
-                 ".htaccess", "web.config", "error", "log", "dump"]
-    for url in all_urls:
-        if any(kw in url.lower() for kw in keywords):
-            interesting.append(url)
+    save(results_dir, "crawled_urls.txt", "\n".join(all_urls))
+    save(results_dir, "interesting_urls.txt", "\n".join(all_interesting))
+    if all_api:
+        save(results_dir, "api_endpoints.txt", "\n".join(all_api))
+    if all_forms:
+        save(results_dir, "forms.json", json.dumps(all_forms, indent=2))
+    if all_params:
+        save(results_dir, "parameters.txt", "\n".join(all_params))
+    if all_comments:
+        save(results_dir, "comments.json", json.dumps(all_comments[:200], indent=2))
 
-    save(results_dir, "interesting_urls.txt", "\n".join(interesting))
+    stat("Crawled URLs", f"{C.BG}{len(all_urls)}{C.D}")
+    if all_interesting:
+        stat("Interesting URLs", f"{C.BR}{len(all_interesting)}{C.D}")
+        for u in all_interesting[:15]:
+            warn(u)
+    if all_api:
+        stat("API Endpoints", f"{C.BY}{len(all_api)}{C.D}")
+        for u in all_api[:10]:
+            info(u)
+    if all_params:
+        stat("Parameters", f"{C.BC}{len(all_params)}{C.D}")
+    if all_forms:
+        stat("Forms", f"{C.BM}{len(all_forms)}{C.D}")
+    if all_comments:
+        stat("Interesting Comments", f"{C.BM}{len(all_comments)}{C.D}")
 
-    if all_urls:
-        stat("Crawled URLs", f"{C.BG}{len(all_urls)}{C.D}")
-        if interesting:
-            stat("Interesting URLs", f"{C.BR}{len(interesting)}{C.D}")
-            for u in interesting[:15]:
-                warn(u)
-    else:
+    if not all_urls:
         info("No URLs crawled (site may block crawlers)")
 
     return all_urls
@@ -846,6 +879,10 @@ def generate_report(domain, results_dir, data, elapsed):
     lines.append(f"- **Open Ports:** {len(data.get('open_ports', []))}")
     lines.append(f"- **Live Hosts:** {len(data.get('live_hosts', []))}")
     lines.append(f"- **Crawled URLs:** {len(data.get('crawled_urls', []))}")
+    lines.append(f"- **API Endpoints:** {len(data.get('api_endpoints', []))}")
+    lines.append(f"- **Parameters:** {len(data.get('parameters', []))}")
+    lines.append(f"- **Forms:** {len(data.get('forms', []))}")
+    lines.append(f"- **Comments:** {len(data.get('comments', []))}")
     lines.append(f"- **Sensitive Files:** {len(data.get('sensitive_files', []))}")
     lines.append(f"- **Hidden IP Ranges:** {len(data.get('hidden_ranges', {}))}\n")
 
@@ -887,6 +924,30 @@ def generate_report(domain, results_dir, data, elapsed):
             lines.append(f"- {u}")
         lines.append("")
 
+    if data.get('api_endpoints'):
+        lines.append("## API Endpoints")
+        for u in data.get('api_endpoints', []):
+            lines.append(f"- `{u}`")
+        lines.append("")
+
+    if data.get('parameters'):
+        lines.append("## Parameters Found")
+        for p in data.get('parameters', []):
+            lines.append(f"- `{p}`")
+        lines.append("")
+
+    if data.get('forms'):
+        lines.append("## Forms")
+        for f in data.get('forms', []):
+            lines.append(f"- **{f.get('method', 'GET')}** `{f.get('action', '')}` — params: {', '.join(f.get('params', []))}")
+        lines.append("")
+
+    if data.get('comments'):
+        lines.append("## Interesting Comments")
+        for c in data.get('comments', [])[:30]:
+            lines.append(f"- [{c.get('type', '')}] `{c.get('url', '')}`: {c.get('comment', '')[:200]}")
+        lines.append("")
+
     lines.append("## Sensitive Files")
     if data.get('sensitive_files'):
         for f in data['sensitive_files']:
@@ -912,7 +973,7 @@ def generate_report(domain, results_dir, data, elapsed):
         ("threatminer", "Threat intelligence"), ("anubis", "Subdomain discovery"),
         ("subdomaincenter", "Subdomain discovery"), ("wayback machine", "URL history"),
         ("dnsx", "DNS resolution"), ("naabu", "Port scanning"),
-        ("httpx", "HTTP probing + tech detection"), ("katana", "Web crawling"),
+        ("httpx", "HTTP probing + tech detection"), ("custom crawler", "Deep async web crawling + JS analysis"),
         ("whois", "Domain information"),
     ]:
         lines.append(f"| {tool} | {purpose} |")
@@ -930,6 +991,8 @@ def generate_report(domain, results_dir, data, elapsed):
         ("Open Ports", len(data.get('open_ports', []))),
         ("Live Hosts", len(data.get('live_hosts', []))),
         ("Crawled URLs", len(data.get('crawled_urls', []))),
+        ("API Endpoints", len(data.get('api_endpoints', []))),
+        ("Parameters", len(data.get('parameters', []))),
         ("Sensitive Files", len(data.get('sensitive_files', []))),
         ("Hidden Ranges", len(data.get('hidden_ranges', {}))),
     ]
@@ -986,10 +1049,10 @@ def main():
     stat("Output", str(results_dir.absolute()), C.BC)
 
     tools_found = []
-    for t in ["subfinder", "amass", "dnsx", "naabu", "httpx", "katana", "whois"]:
+    for t in ["subfinder", "amass", "dnsx", "naabu", "httpx", "whois"]:
         if check_tool(t):
             tools_found.append(t)
-    stat("Tools", f"{len(tools_found)}/7 available", C.BY)
+    stat("Tools", f"{len(tools_found)}/6 available", C.BY)
     print(f"    {C.DIM}{'─'*50}{C.D}\n")
 
     data = {}
@@ -1008,6 +1071,19 @@ def main():
     data["live_hosts"] = phase4_http(data["subdomains"], results_dir)
     data["crawled_urls"] = phase5_crawl(domain, data["live_hosts"], results_dir)
     data["sensitive_files"] = phase6_sensitive(data["live_hosts"], results_dir)
+
+    api_file = results_dir / "api_endpoints.txt"
+    if api_file.exists():
+        data["api_endpoints"] = api_file.read_text().splitlines()
+    params_file = results_dir / "parameters.txt"
+    if params_file.exists():
+        data["parameters"] = params_file.read_text().splitlines()
+    forms_file = results_dir / "forms.json"
+    if forms_file.exists():
+        data["forms"] = json.loads(forms_file.read_text())
+    comments_file = results_dir / "comments.json"
+    if comments_file.exists():
+        data["comments"] = json.loads(comments_file.read_text())
     phase7_domain_info(domain, results_dir)
 
     dork_file = results_dir / "google_dorks.txt"
