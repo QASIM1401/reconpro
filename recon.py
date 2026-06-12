@@ -32,6 +32,67 @@ GO_BIN = os.path.join(os.path.expanduser("~"), "go", "bin")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ["PATH"] = GO_BIN + os.pathsep + SCRIPT_DIR + os.pathsep + os.environ.get("PATH", "")
 
+# Subdomains that are almost certainly internal/corporate — skip them
+INTERNAL_PATTERNS = [
+    ".corp.", ".redmond.", ".internal.", ".intranet.", ".local.",
+    ".private.", ".corp.microsoft.", ".corp.google.", ".corp.amazon.",
+    ".ad.", ".azure.", ".msft.", ".windows.", ".office365.",
+    "_tcp.", "_udp.", "_dmarc.", "_mta-sts.", "_sip.",
+]
+# Subdomains that are almost certainly non-web (skip for HTTP probing)
+NON_WEB_PREFIXES = [
+    "autodiscover.", "selector", "s1.", "s2.", "s3.",
+    "_domainkey.", "_mta-sts.",
+]
+# Priority subdomains — scan these first (public-facing, likely exposed)
+PRIORITY_KEYWORDS = [
+    "www", "api", "dev", "test", "staging", "beta", "alpha",
+    "admin", "portal", "login", "mail", "webmail", "smtp", "pop", "imap",
+    "vpn", "remote", "gateway", "proxy", "cdn", "static", "assets",
+    "shop", "store", "pay", "checkout", "app", "web", "site",
+    "blog", "docs", "wiki", "status", "monitor", "grafana", "kibana",
+    "jenkins", "gitlab", "git", "ci", "cd", "docker", "k8s", "kube",
+    "db", "database", "sql", "mongo", "redis", "elastic",
+    "grafana", "sonarqube", "jira", "confluence", "nexus",
+    "backup", "old", "legacy", "temp", "debug", "test",
+]
+
+
+def filter_internal(subs, domain):
+    """Remove internal/corporate subdomains that won't resolve publicly."""
+    filtered = set()
+    skipped = 0
+    for sub in subs:
+        sub = sub.strip().lower()
+        if not sub:
+            continue
+        # Skip internal patterns
+        if any(p in sub for p in INTERNAL_PATTERNS):
+            skipped += 1
+            continue
+        # Skip non-web prefixes
+        if any(sub.startswith(p) for p in NON_WEB_PREFIXES):
+            skipped += 1
+            continue
+        # Skip if too many subdomain levels (e.g. a.b.c.d.microsoft.com)
+        prefix = sub.replace(f".{domain}", "")
+        if prefix.count(".") > 2:
+            skipped += 1
+            continue
+        filtered.add(sub)
+    return filtered, skipped
+
+
+def prioritize_subdomains(subs, domain):
+    """Sort subdomains: public-facing ones first, then by name."""
+    def score(sub):
+        prefix = sub.replace(f".{domain}", "").split(".")[0]
+        for i, kw in enumerate(PRIORITY_KEYWORDS):
+            if prefix == kw:
+                return -i  # higher priority = lower score
+        return 100 + len(prefix)
+    return sorted(subs, key=score)
+
 
 class C:
     if sys.platform == "win32":
@@ -669,14 +730,22 @@ def phase1_subdomains(domain, results_dir):
     except:
         fail("securitytrails: failed")
 
-    sorted_subs = sorted(all_subs)[:3000]
+    # Filter out internal/corporate subdomains
+    filtered, skipped = filter_internal(all_subs, domain)
+    if skipped > 0:
+        warn(f"Filtered {skipped} internal/corporate subdomains")
+
+    # Prioritize public-facing subdomains
+    sorted_subs = prioritize_subdomains(filtered, domain)[:3000]
     save(results_dir, "all_subdomains.txt", "\n".join(sorted_subs))
 
     print(f"\n    {C.DIM}{'─'*50}{C.D}")
     stat("Sources", f"{sources_ok}/{sources_total} responded")
     stat("Total subdomains", f"{C.BG}{len(all_subs)}{C.D}")
-    if len(all_subs) > 3000:
-        warn(f"Capped to 3,000 for performance (found {len(all_subs)})")
+    if skipped > 0:
+        stat("Internal filtered", f"{C.Y}{skipped}{C.D}")
+    if len(filtered) > 3000:
+        warn(f"Capped to 3,000 for performance (found {len(filtered)})")
     stat("Selected for scan", f"{C.BG}{len(sorted_subs)}{C.D}")
     print(f"    {C.DIM}{'─'*50}{C.D}")
 
@@ -695,21 +764,24 @@ def phase2_dns(domain, subdomains, results_dir):
     phase_header(2, "DNS RESOLUTION & IP ANALYSIS")
 
     if not subdomains:
-        return []
+        return [], {}
 
     subs_to_resolve = subdomains[:3000]
-    info(f"Resolving {len(subs_to_resolve)} subdomains (limited from {len(subdomains)})")
+    info(f"Resolving {len(subs_to_resolve)} subdomains")
 
     infile = results_dir / "dns_input.txt"
     infile.write_text("\n".join(subs_to_resolve), encoding="utf-8")
 
-    info("Resolving subdomains via dnsx")
+    # Scale timeout based on count: 120s for <500, up to 600s for 3000
+    dns_timeout = min(600, max(120, len(subs_to_resolve) // 5))
+    info(f"Resolving subdomains via dnsx (timeout: {dns_timeout}s)")
     start_spinner("Resolving DNS records")
     outfile = results_dir / "dns_results.txt"
-    run_cmd(f'dnsx -l "{infile}" -o "{outfile}" -silent -a -aaaa -retry 1 -t 50 -rl 500', timeout=120, silent=True)
+    run_cmd(f'dnsx -l "{infile}" -o "{outfile}" -silent -a -aaaa -retry 1 -t 50 -rl 500', timeout=dns_timeout, silent=True)
     stop_spinner()
 
     ips = set()
+    resolved_subs = {}  # sub -> [ips]
     cname_map = {}
     mx_records = []
     txt_records = []
@@ -719,11 +791,15 @@ def phase2_dns(domain, subdomains, results_dir):
             line = line.strip()
             if not line:
                 continue
+            parts = line.split()
+            sub_name = parts[0] if parts else ""
             found_ips = re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line)
-            ips.update(found_ips)
+            if sub_name and found_ips:
+                resolved_subs[sub_name] = found_ips
+                ips.update(found_ips)
             cname_match = re.search(r'CNAME\s+(.+?)(?:\s|$)', line)
             if cname_match:
-                cname_map[line.split()[0]] = cname_match.group(1).rstrip('.')
+                cname_map[sub_name] = cname_match.group(1).rstrip('.')
             if re.search(r'MX\s+', line):
                 mx_records.append(line)
             if re.search(r'TXT\s+', line):
@@ -739,7 +815,8 @@ def phase2_dns(domain, subdomains, results_dir):
     run_cmd(f'dnsx -l "{brute_file}" -o "{brute_out}" -silent -a -retry 3', timeout=120, silent=True)
     if brute_out.exists():
         for line in brute_out.read_text().splitlines():
-            ips.update(re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line))
+            found = re.findall(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', line)
+            ips.update(found)
 
     # Analyze ranges
     info("Analyzing IP ranges")
@@ -775,7 +852,7 @@ def phase2_dns(domain, subdomains, results_dir):
     if txt_records:
         save(results_dir, "txt_records.txt", "\n".join(txt_records))
 
-    return sorted(ips)
+    return sorted(ips), resolved_subs
 
 
 # ─────────────────────────────────────────────
@@ -841,11 +918,28 @@ def phase3_ports(ips, results_dir):
 # ─────────────────────────────────────────────
 # PHASE 4: HTTP Probe (Batched httpx)
 # ─────────────────────────────────────────────
-def phase4_http(subdomains, results_dir):
+def phase4_http(subdomains, results_dir, resolved_subs=None):
     phase_header(4, "HTTP PROBING")
 
     if not subdomains:
         return []
+
+    # IP deduplication: only scan 1 subdomain per unique IP
+    if resolved_subs:
+        ip_to_sub = {}
+        for sub in subdomains:
+            sub_ips = resolved_subs.get(sub, [])
+            if sub_ips:
+                for ip in sub_ips:
+                    if ip not in ip_to_sub:
+                        ip_to_sub[ip] = sub
+            else:
+                # No DNS resolution — still include it
+                ip_to_sub[f"noip_{sub}"] = sub
+        deduped = list(ip_to_sub.values())
+        if len(deduped) < len(subdomains):
+            warn(f"IP dedup: {len(subdomains)} -> {len(deduped)} (1 per unique IP)")
+        subdomains = deduped
 
     infile = results_dir / "httpx_input.txt"
     urls = [f"https://{sub}" for sub in subdomains]
@@ -1284,7 +1378,7 @@ def main():
     start = time.time()
 
     data["subdomains"] = phase1_subdomains(domain, results_dir)
-    data["ips"] = phase2_dns(domain, data["subdomains"], results_dir)
+    data["ips"], resolved_subs = phase2_dns(domain, data["subdomains"], results_dir)
 
     port_results = phase3_ports(data["ips"], results_dir)
     data["open_ports"] = [p for p in port_results if isinstance(p, str) and ":" in p]
@@ -1293,7 +1387,7 @@ def main():
     if svc_file.exists():
         data["port_services"] = json.loads(svc_file.read_text())
 
-    data["live_hosts"] = phase4_http(data["subdomains"], results_dir)
+    data["live_hosts"] = phase4_http(data["subdomains"], results_dir, resolved_subs)
     data["crawled_urls"] = phase5_crawl(domain, data["live_hosts"], results_dir)
     data["sensitive_files"] = phase6_sensitive(data["live_hosts"], results_dir)
 
