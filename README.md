@@ -1,6 +1,6 @@
 # RECONPRO
 
-**Advanced Red Team Reconnaissance Pipeline with Animated Terminal UI**
+**Advanced Reconnaissance Pipeline with Animated Terminal UI**
 
 ```
                                                                      
