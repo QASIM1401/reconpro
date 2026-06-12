@@ -1,6 +1,6 @@
 # RECONPRO
 
-**Advanced Reconnaissance Pipeline with Animated Terminal UI**
+**Advanced Reconnaissance Pipeline**
 
 ```
                                                                      
@@ -10,7 +10,7 @@
                                                                        
 ```
 
-A comprehensive 8-phase red team reconnaissance pipeline with **25+ subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
+A comprehensive 8-phase reconnaissance pipeline with **25+ subdomain sources**, animated terminal UI, progress bars, spinners, hidden IP range detection, batch processing, and cross-platform support.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-green?logo=windows&logoColor=white)
