@@ -1,100 +1,182 @@
 #!/bin/bash
-# RECONPRO - Linux/Kali Auto Installer
+# RECONPRO - Linux/Kali Fast Auto Installer
+# Detects already-installed tools and skips them. Runs Go installs in parallel.
 
-echo ""
-echo "  ========================================"
-echo "   RECONPRO Linux Installer"
-echo "  ========================================"
-echo ""
+set -u
 
 # Colors
 GREEN='\033[1;92m'
 RED='\033[1;91m'
 YELLOW='\033[1;93m'
+BLUE='\033[1;94m'
 NC='\033[0m'
 
 OK="${GREEN}[OK]${NC}"
 FAIL="${RED}[!!]${NC}"
 WARN="${YELLOW}[-]${NC}"
+INFO="${BLUE}[*]${NC}"
 
-# ─── PYTHON ───
-echo "[1/5] Checking Python..."
-if command -v python3 &>/dev/null; then
-    python3 --version
-    echo -e "  $OK Python"
-else
-    echo -e "  $WARN Python not found, installing..."
-    sudo apt install -y python3 python3-pip
+GO_BIN="$HOME/go/bin"
+mkdir -p "$GO_BIN"
+export PATH="$GO_BIN:$PATH"
+
+OK_COUNT=0
+TOTAL=0
+NEED_APT_UPDATE=1
+
+# ─────────────────────────────────────────────
+echo ""
+echo "  ========================================"
+echo "   RECONPRO Linux/Kali Fast Installer"
+echo "   Skips already-installed tools"
+echo "  ========================================"
+echo ""
+
+# ─── HELPERS ───
+count_ok() {
+    ((TOTAL++))
+    [ "$1" -eq 1 ] && ((OK_COUNT++))
+}
+
+check_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+run_apt_update_once() {
+    if [ "$NEED_APT_UPDATE" -eq 1 ]; then
+        echo -e "  $INFO Updating apt package list..."
+        sudo apt-get update -qq >/dev/null 2>&1
+        NEED_APT_UPDATE=0
+    fi
+}
+
+step() {
+    echo ""
+    echo -e "${BLUE}==>${NC} $1"
+}
+
+install_apt_pkg() {
+    local pkg="$1"
+    local cmd="${2:-$pkg}"
+    if check_cmd "$cmd"; then
+        echo -e "  $OK $pkg already installed"
+        return 0
+    fi
+    run_apt_update_once
+    echo -e "  $WARN Installing $pkg via apt..."
+    if sudo apt-get install -y -qq "$pkg" >/dev/null 2>&1; then
+        echo -e "  $OK $pkg installed"
+        return 0
+    else
+        echo -e "  $FAIL $pkg installation failed"
+        return 1
+    fi
+}
+
+install_pip_pkg() {
+    local pkg="$1"
+    local mod="${2:-$pkg}"
+    if python3 -c "import $mod" 2>/dev/null; then
+        echo -e "  $OK Python package $pkg already installed"
+        return 0
+    fi
+    echo -e "  $WARN Installing Python package $pkg..."
+    if pip3 install "$pkg" --quiet --disable-pip-version-check 2>/dev/null; then
+        echo -e "  $OK $pkg installed"
+        return 0
+    elif pip3 install "$pkg" --quiet --disable-pip-version-check --break-system-packages 2>/dev/null; then
+        echo -e "  $OK $pkg installed (with --break-system-packages)"
+        return 0
+    else
+        echo -e "  $FAIL $pkg installation failed"
+        return 1
+    fi
+}
+
+install_go_tool_bg() {
+    local tool="$1"
+    local pkg="$2"
+    if check_cmd "$tool"; then
+        echo -e "  $OK $tool already installed"
+        return 0
+    fi
+    echo -e "  $WARN Installing $tool (background)..."
+    (
+        if go install -v "$pkg" >/dev/null 2>&1; then
+            echo -e "  $OK $tool installed"
+        else
+            echo -e "  $FAIL $tool installation failed"
+        fi
+    ) &
+}
+
+# ─── PERSIST GO BIN TO PATH ───
+if ! grep -qF "$HOME/go/bin" ~/.bashrc 2>/dev/null && ! grep -qF "go/bin" ~/.bashrc 2>/dev/null; then
+    echo "" >> ~/.bashrc
+    echo '# Added by RECONPRO installer' >> ~/.bashrc
+    echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.bashrc
 fi
 
-# ─── PIP ───
-echo ""
-echo "[2/5] Checking pip..."
-if python3 -m pip --version &>/dev/null; then
-    echo -e "  $OK pip"
-else
-    echo -e "  $WARN pip not found, installing..."
-    sudo apt install -y python3-pip
+# ─── SYSTEM DEPENDENCIES ───
+step "System dependencies"
+install_apt_pkg "python3" "python3" && count_ok 1 || count_ok 0
+install_apt_pkg "python3-pip" "pip3" && count_ok 1 || count_ok 0
+install_apt_pkg "golang-go" "go" && count_ok 1 || count_ok 0
+install_apt_pkg "whois" "whois" && count_ok 1 || count_ok 0
+
+# Ensure pip exists even if python3-pip package naming is different
+if ! check_cmd "pip3"; then
+    python3 -m ensurepip --default-pip >/dev/null 2>&1 || true
 fi
 
 # ─── PYTHON PACKAGES ───
-echo ""
-echo "[3/5] Installing Python packages..."
-pip3 install python-whois requests aiohttp sublist3r dnsgen --quiet 2>/dev/null
-echo -e "  $OK packages"
+step "Python packages"
+install_pip_pkg "python-whois" "whois" && count_ok 1 || count_ok 0
+install_pip_pkg "requests" "requests" && count_ok 1 || count_ok 0
+install_pip_pkg "aiohttp" "aiohttp" && count_ok 1 || count_ok 0
+install_pip_pkg "sublist3r" "sublist3r" && count_ok 1 || count_ok 0
+install_pip_pkg "dnsgen" "dnsgen" && count_ok 1 || count_ok 0
 
-# ─── GO TOOLS ───
-echo ""
-echo "[4/5] Installing Go tools (3-8 min)..."
+# ─── GO TOOLS (parallel) ───
+step "Go tools (installing in parallel)"
+install_go_tool_bg "subfinder" "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
+install_go_tool_bg "httpx" "github.com/projectdiscovery/httpx/cmd/httpx@latest"
+install_go_tool_bg "naabu" "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
+install_go_tool_bg "dnsx" "github.com/projectdiscovery/dnsx/cmd/dnsx@latest"
+install_go_tool_bg "puredns" "github.com/d3mondev/puredns/v2@latest"
+install_go_tool_bg "alterx" "github.com/projectdiscovery/alterx/cmd/alterx@latest"
+install_go_tool_bg "amass" "github.com/owasp-amass/amass/v4/cmd/amass@master"
+wait
 
-echo "  subfinder..."
-go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest 2>/dev/null
+# Refresh shell command hash
+hash -r 2>/dev/null || true
 
-echo "  httpx..."
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest 2>/dev/null
-
-echo "  naabu..."
-go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest 2>/dev/null
-
-echo "  dnsx..."
-go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest 2>/dev/null
-
-echo "  puredns..."
-go install -v github.com/d3mondev/puredns/v2@latest 2>/dev/null
-
-echo "  alterx..."
-go install -v github.com/projectdiscovery/alterx/cmd/alterx@latest 2>/dev/null
-
-# ─── CHECK ───
-echo ""
-echo "[5/5] Final check..."
-echo ""
-
+# ─── FINAL CHECK ───
+step "Final verification"
 OK_COUNT=0
+TOTAL=0
 
-command -v python3 &>/dev/null && echo -e "  $OK Python3" && ((OK_COUNT++)) || echo -e "  $FAIL Python3"
-command -v go &>/dev/null && echo -e "  $OK Go" && ((OK_COUNT++)) || echo -e "  $FAIL Go"
-command -v subfinder &>/dev/null && echo -e "  $OK subfinder" && ((OK_COUNT++)) || echo -e "  $FAIL subfinder"
-command -v httpx &>/dev/null && echo -e "  $OK httpx" && ((OK_COUNT++)) || echo -e "  $FAIL httpx"
-command -v naabu &>/dev/null && echo -e "  $OK naabu" && ((OK_COUNT++)) || echo -e "  $FAIL naabu"
-command -v dnsx &>/dev/null && echo -e "  $OK dnsx" && ((OK_COUNT++)) || echo -e "  $FAIL dnsx"
-command -v puredns &>/dev/null && echo -e "  $OK puredns" && ((OK_COUNT++)) || echo -e "  $FAIL puredns"
-command -v alterx &>/dev/null && echo -e "  $OK alterx" && ((OK_COUNT++)) || echo -e "  $FAIL alterx"
-python3 -c "import sublist3r" 2>/dev/null && echo -e "  $OK sublist3r" && ((OK_COUNT++)) || echo -e "  $FAIL sublist3r"
-python3 -c "import dnsgen" 2>/dev/null && echo -e "  $OK dnsgen" && ((OK_COUNT++)) || echo -e "  $FAIL dnsgen"
+check_cmd "python3" && echo -e "  $OK Python3" && count_ok 1 || echo -e "  $FAIL Python3"
+check_cmd "go" && echo -e "  $OK Go" && count_ok 1 || echo -e "  $FAIL Go"
+check_cmd "whois" && echo -e "  $OK whois" && count_ok 1 || echo -e "  $FAIL whois"
 
-# Add Go bin to PATH if not already
-GO_BIN="$HOME/go/bin"
-if ! echo "$PATH" | grep -q "$GO_BIN"; then
-    export PATH="$GO_BIN:$PATH"
-    echo ""
-    echo "  Added $GO_BIN to PATH (this session)"
-    echo '  export PATH="$HOME/go/bin:$PATH"' >> ~/.bashrc
-fi
+for tool in subfinder httpx naabu dnsx puredns alterx amass; do
+    check_cmd "$tool" && echo -e "  $OK $tool" && count_ok 1 || echo -e "  $FAIL $tool"
+done
+
+for mod in whois requests aiohttp sublist3r dnsgen; do
+    if python3 -c "import $mod" 2>/dev/null; then
+        echo -e "  $OK Python module: $mod"
+        count_ok 1
+    else
+        echo -e "  $FAIL Python module: $mod"
+        count_ok 0
+    fi
+done
 
 echo ""
 echo "  ========================================"
-echo "   Ready: $OK_COUNT/10 tools"
+echo "   Ready: $OK_COUNT/$TOTAL tools"
 echo "  ========================================"
 echo "  Run: python3 recon.py"
 echo ""

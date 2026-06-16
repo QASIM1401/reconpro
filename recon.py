@@ -122,27 +122,35 @@ LINE = "═"
 
 _stop_spinner = False
 _spinner_thread = None
+_spinner_msg = ""
 
 
-def spinner(msg, color=C.C):
-    global _stop_spinner
+def spinner(color=C.C):
+    global _stop_spinner, _spinner_msg
     _stop_spinner = False
     i = 0
     while not _stop_spinner:
+        msg = _spinner_msg
         sys.stdout.write(f"\r    {color}{SPIN_CHARS[i % len(SPIN_CHARS)]} {msg}{C.D}   ")
         sys.stdout.flush()
         i += 1
         time.sleep(0.08)
-    sys.stdout.write(f"\r    {C.D}{' ' * (len(msg) + 10)}\r")
+    sys.stdout.write(f"\r    {C.D}{' ' * (len(_spinner_msg) + 10)}\r")
     sys.stdout.flush()
 
 
 def start_spinner(msg, color=C.C):
     import threading
-    global _stop_spinner, _spinner_thread
+    global _stop_spinner, _spinner_thread, _spinner_msg
+    _spinner_msg = msg
     _stop_spinner = False
-    _spinner_thread = threading.Thread(target=spinner, args=(msg, color), daemon=True)
+    _spinner_thread = threading.Thread(target=spinner, args=(color,), daemon=True)
     _spinner_thread.start()
+
+
+def set_spinner_msg(msg):
+    global _spinner_msg
+    _spinner_msg = msg
 
 
 def stop_spinner():
@@ -173,14 +181,14 @@ def banner():
     b = f"""{C.BOLD}{C.BC}
     {LINE*72}
     
+ ██████╗██╗   ██╗██████╗ ███████╗██████╗ ███████╗ ██████╗ ██████╗ ██╗   ██╗████████╗
+██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗██╔════╝██╔════╝██╔═══██╗██║   ██║╚══██╔══╝
+██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝███████╗██║     ██║   ██║██║   ██║   ██║   
+██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗╚════██║██║     ██║   ██║██║   ██║   ██║   
+╚██████╗   ██║   ██████╔╝███████╗██║  ██║███████║╚██████╗╚██████╔╝╚██████╔╝   ██║   
+ ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝   
     
-      ▄█████ ██  ██ █████▄ ██████ █████▄  ▄█████ ▄█████ ▄████▄ ██  ██ ██████ 
-      ██      ▀██▀  ██▄▄██ ██▄▄   ██▄▄██▄ ▀▀▀▄▄▄ ██     ██  ██ ██  ██   ██   
-      ▀█████   ██   ██▄▄█▀ ██▄▄▄▄ ██   ██ █████▀ ▀█████ ▀████▀ ▀████▀   ██   
-
-                                                                       
-    
-    {C.BG}  Red Team Recon Pipeline v3.1{C.D}
+    {C.BG}  Recon Pipeline v3.1{C.D}
     {C.BY}  Advanced Attack Surface Mapping{C.D}
     {C.DIM}  24 Subdomain Sources | Custom Deep Crawler | Cross-Platform{C.D}
     
@@ -228,8 +236,97 @@ def run_cmd(cmd, timeout=120, silent=False):
         r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
                            timeout=timeout, encoding='utf-8', errors='replace')
         return r.stdout.strip()
-    except:
+    except subprocess.TimeoutExpired:
+        if not silent:
+            warn(f"command timed out after {timeout}s: {cmd[:60]}...")
         return ""
+    except Exception as e:
+        if not silent:
+            warn(f"command failed: {e}")
+        return ""
+
+
+def _kill_proc_tree(proc):
+    """Kill a Popen process and its children cross-platform."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(f'taskkill /F /T /PID {proc.pid} >nul 2>&1',
+                           shell=True, timeout=10)
+        else:
+            import os, signal
+            pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGTERM)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def run_amass_with_monitor(domain, output_file, max_idle=60, max_total=1800):
+    """
+    Run amass passive with an idle monitor.
+    Kills it only if it stops writing output for `max_idle` seconds,
+    or if it exceeds `max_total` seconds.
+    Returns (ok: bool, status_msg: str)
+    """
+    import subprocess
+    output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    amass_minutes = max(1, max_total // 60)
+    # Note: no -nocolor; color is irrelevant when output goes to a file and the
+    # flag is not supported in all amass versions.
+    cmd = f'amass enum -passive -d {domain} -o "{output_file}" -timeout {amass_minutes}'
+
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["preexec_fn"] = os.setsid
+
+    proc = subprocess.Popen(
+        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs
+    )
+
+    last_size = 0
+    last_growth = time.time()
+    start = time.time()
+    check_interval = 5
+
+    while proc.poll() is None:
+        time.sleep(check_interval)
+        elapsed = int(time.time() - start)
+        current_size = output_file.stat().st_size if output_file.exists() else 0
+
+        if current_size > last_size:
+            last_size = current_size
+            last_growth = time.time()
+            set_spinner_msg(f"Running amass ({current_size} bytes, {elapsed}s)")
+        else:
+            idle = int(time.time() - last_growth)
+            set_spinner_msg(f"Running amass ({current_size} bytes, idle {idle}s)")
+
+        if time.time() - last_growth > max_idle:
+            _kill_proc_tree(proc)
+            return False, f"stopped after {elapsed}s (no output for {max_idle}s)"
+
+        if elapsed > max_total:
+            _kill_proc_tree(proc)
+            return False, f"stopped after max {max_total}s"
+
+    try:
+        stdout, stderr = proc.communicate(timeout=5)
+    except Exception:
+        _kill_proc_tree(proc)
+        stdout, stderr = b"", b""
+
+    elapsed = int(time.time() - start)
+    if proc.returncode != 0:
+        err = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()[:120]
+        return False, f"failed (exit {proc.returncode}) {err}"
+
+    return True, f"completed in {elapsed}s"
 
 
 def save(results_dir, filename, content):
@@ -304,20 +401,35 @@ def phase1_subdomains(domain, results_dir):
             else:
                 fail("crt.sh: failed after 3 attempts")
 
-    # 3. amass (passive)
+    # 3. amass (passive) - monitored so it can't silently hang
     info("amass (passive mode)")
-    start_spinner("Running amass")
-    amass_out = results_dir / "amass.txt"
-    run_cmd(f'amass enum -passive -d {domain} -o "{amass_out}"', timeout=300, silent=True)
-    stop_spinner()
-    if amass_out.exists():
-        before = len(all_subs)
-        for line in amass_out.read_text().splitlines():
-            add_sub(line)
-        ok(f"amass: {len(all_subs) - before} new subdomains")
-        sources_ok += 1
+    if not check_tool("amass"):
+        fail("amass: not installed")
     else:
-        fail("amass: no results")
+        amass_out = results_dir / "amass.txt"
+        # Allow override via env var; default gives amass up to 30 min but kills if idle >60s
+        amass_max_total = int(os.environ.get("AMASS_TIMEOUT", 1800))
+        amass_max_idle = int(os.environ.get("AMASS_IDLE_TIMEOUT", 60))
+        start_spinner("Running amass...")
+        amass_ok, amass_status = run_amass_with_monitor(
+            domain, amass_out, max_idle=amass_max_idle, max_total=amass_max_total
+        )
+        stop_spinner()
+        if amass_out.exists() and amass_out.stat().st_size > 0:
+            before = len(all_subs)
+            for line in amass_out.read_text().splitlines():
+                add_sub(line)
+            new_count = len(all_subs) - before
+            if amass_ok:
+                ok(f"amass: {new_count} new subdomains ({amass_status})")
+            else:
+                warn(f"amass: {new_count} new subdomains, {amass_status}")
+            sources_ok += 1
+        else:
+            if amass_ok:
+                warn(f"amass: no results ({amass_status})")
+            else:
+                warn(f"amass: {amass_status}")
 
     # 4. crt.sh via curl (fallback)
     info("crt.sh (curl fallback)")
