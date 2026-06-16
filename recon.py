@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RECONPRO v3.1 - Red Team Recon Pipeline
+RECONPRO v3.1 - Recon Pipeline
 Advanced Attack Surface Mapping & Reconnaissance
 """
 
@@ -186,8 +186,8 @@ def banner():
 ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝███████╗██║     ██║   ██║██║   ██║   ██║   
 ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗╚════██║██║     ██║   ██║██║   ██║   ██║   
 ╚██████╗   ██║   ██████╔╝███████╗██║  ██║███████║╚██████╗╚██████╔╝╚██████╔╝   ██║   
- ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝   
-    
+ ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝
+
     {C.BG}  Recon Pipeline v3.1{C.D}
     {C.BY}  Advanced Attack Surface Mapping{C.D}
     {C.DIM}  24 Subdomain Sources | Custom Deep Crawler | Cross-Platform{C.D}
